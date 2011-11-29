@@ -1,14 +1,21 @@
 /*
- * This file is part of the GeoLatte project. This code is licenced under
- * the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance
- * with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
- * Unless required by applicable law or agreed to in writing, software distributed under the License
- * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
- * implied. See the License for the specific language governing permissions and limitations under the
- * License.
+ * This file is part of the GeoLatte project.
  *
- * Copyright (C) 2010 - 2010 and Ownership of code is shared by:
- * Qmino bvba - Romeinsestraat 18 - 3001 Heverlee  (http://www.Qmino.com)
+ *     GeoLatte is free software: you can redistribute it and/or modify
+ *     it under the terms of the GNU Lesser General Public License as published by
+ *     the Free Software Foundation, either version 3 of the License, or
+ *     (at your option) any later version.
+ *
+ *     GeoLatte is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU Lesser General Public License for more details.
+ *
+ *     You should have received a copy of the GNU Lesser General Public License
+ *     along with GeoLatte.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Copyright (C) 2010 - 2011 and Ownership of code is shared by:
+ * Qmino bvba - Esperantolaan 4 - 3001 Heverlee  (http://www.qmino.com)
  * Geovise bvba - Generaal Eisenhowerlei 9 - 2140 Antwerpen (http://www.geovise.com)
  */
 
@@ -16,13 +23,13 @@ package org.geolatte.featureserver.rest;
 
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
-import org.geolatte.core.Feature;
-import org.geolatte.core.dataformats.csv.CsvSerializationTransformation;
-import org.geolatte.core.dataformats.json.JsonSerializationTransformation;
-import org.geolatte.core.dataformats.json.SimpleDateFormatSerializer;
-import org.geolatte.core.reflection.EntityClassReader;
-import org.geolatte.core.reflection.ObjectToFeatureTransformation;
-import org.geolatte.core.transformer.*;
+import org.geolatte.common.Feature;
+import org.geolatte.common.dataformats.csv.CsvSerializationTransformation;
+import org.geolatte.common.dataformats.json.jackson.JsonSerializationTransformation;
+import org.geolatte.common.dataformats.json.jackson.SimpleDateFormatSerializer;
+import org.geolatte.common.reflection.EntityClassReader;
+import org.geolatte.common.reflection.ObjectToFeatureTransformation;
+import org.geolatte.common.transformer.*;
 import org.geolatte.featureserver.config.ConfigurationException;
 import org.geolatte.featureserver.config.FeatureServerConfiguration;
 import org.geolatte.featureserver.dbase.DatabaseException;
@@ -43,6 +50,7 @@ import java.util.*;
  * </p>
  *
  * @author Yves Vandewoude
+ * @author Bert Vanhooff
  * @author <a href="http://www.qmino.com">Qmino bvba</a>
  * @since SDK1.5
  */
@@ -51,6 +59,10 @@ public class DefaultTableService implements TableService {
 
     private final JsonSerializationTransformation jts = new JsonSerializationTransformation();
     private static final Logger LOGGER = LogManager.getLogger(DefaultTableService.class);
+    private enum OutputFormat {
+        JSON,
+        CSV
+    }
 
     static {
         // Initialize the facade, if not you might run into problems if you try to get a reader from the AutoMapper
@@ -111,46 +123,101 @@ public class DefaultTableService implements TableService {
 
     }
 
-    public Response getTable(String tableName,
-                           String bbox,
-                           String cql,
-                           String output,
-                           Integer start,
-                           Integer limit,
-                           String sortColumns,
-                           String sortDirections,
-                           String visibleColumns,
-                           String separator,
-                           String asdownload) {
+    public Response getTableCSV(String tableName,
+                                String bbox,
+                                String cql,
+                                Integer start,
+                                Integer limit,
+                                String sortColumns,
+                                String sortDirections,
+                                String visibleColumns,
+                                String separator,
+                                String asdownload) {
+
+        return getTable(OutputFormat.CSV,
+                        tableName,
+                        bbox,
+                        cql,
+                        start, limit,
+                        sortColumns, sortDirections, visibleColumns,
+                        separator,
+                        asdownload);
+    }
+
+    public Response getTableJSON(String tableName,
+                                 String bbox,
+                                 String cql,
+                                 Integer start,
+                                 Integer limit,
+                                 String sortColumns,
+                                 String sortDirections,
+                                 String visibleColumns,
+                                 String asdownload) {
+
+        return getTable(OutputFormat.JSON,
+                        tableName,
+                        bbox,
+                        cql,
+                        start, limit,
+                        sortColumns, sortDirections, visibleColumns,
+                        null,
+                        asdownload);
+    }
+
+    /**
+     * Gets the requested table in the requested format, docs see
+     * {@link #getTableCSV(String, String, String, Integer, Integer, String, String, String, String, String)} and
+     * {@link #getTableJSON(String, String, String, Integer, Integer, String, String, String, String)}.
+     */
+    private Response getTable(OutputFormat format,
+                              String tableName,
+                              String bbox,
+                              String cql,
+                              Integer start,
+                              Integer limit,
+                              String sortColumns,
+                              String sortDirections,
+                              String visibleColumns,
+                              String separator,
+                              String asdownload) {
         StandardFeatureReader featureReader = null;
         try {
             List<Order> orderings = getOrderings(tableName, sortColumns, sortDirections);
             featureReader = DbaseFacade.getInstance().getReader(tableName, bbox, cql, start, limit, orderings);
             if (featureReader == null) {
-                String msg = tableNotExistsMessage(tableName);
-                return toResponse(msg,null);
+                Response.ResponseBuilder builder =
+                    Response.status(Response.Status.NOT_FOUND)
+                            .entity(tableNotExistsMessage(tableName));
+                return builder.build();
             }
             List<String> visible = new ArrayList<String>();
             if (visibleColumns != null) {
                 visible.add(visibleColumns);
             }
             List<List<String>> columnNamesToShow = getColumnNames(tableName, visible);
-            String contentDisposition = buildContentDisposition(tableName, asdownload, output);
-            if ("csv".equalsIgnoreCase(output)) {
-                String msg = getTablesInCsv(featureReader, columnNamesToShow.size() > 0 ? columnNamesToShow.get(0) : null, separator);
-                return toResponse(msg, contentDisposition);
-            } else {
-                String msg = getTablesInJson(featureReader);
-                return toResponse(msg, contentDisposition);
+            String contentDisposition = buildContentDisposition(tableName, asdownload, format);
+            String msg;
+            switch (format) {
+                case CSV:
+                    msg = getTablesInCsv(featureReader, columnNamesToShow.size() > 0 ? columnNamesToShow.get(0) : null, separator);
+                    break;
+                default:
+                    msg = getTablesInJson(featureReader);
             }
+            return toResponse(msg, contentDisposition);
+
         } catch (ConfigurationException e) {
             LOGGER.warn("Invalid Featureserver configuration: " + e.getMessage());
-            String msg  = "{\"error\": \"Invalid Featureserver configuration: " + e.getMessage() + "\"}";
-            return toResponse(msg,null);
+            Response.ResponseBuilder builder =
+                    Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity("{\"error\": \"Invalid Featureserver configuration: " + e.getMessage() + "\"}");
+            return builder.build();
         } catch (DatabaseException e) {
             LOGGER.warn("Database access problem: " + e.getMessage());
-            String msg = "{\"error\": \"Database access problem: " + e.getMessage() + "\"}";
-            return toResponse(msg, null);
+            Response.ResponseBuilder builder =
+                    Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity("{\"error\": \"Database access problem: " + e.getMessage() + "\"}");
+            return builder.build();
         } finally {
             if (featureReader != null) {
                 featureReader.close();
@@ -158,9 +225,10 @@ public class DefaultTableService implements TableService {
         }
     }
 
-    private String buildContentDisposition(String tableName, String asdownload, String output) {
+    private String buildContentDisposition(String tableName, String asdownload, OutputFormat output) {
         if (asdownload != null && asdownload.equalsIgnoreCase("true")){
-            return String.format("attachment; filename=%s.%s", tableName , output);
+            String extension = OutputFormat.JSON.equals(output) ? "js" : "csv";
+            return String.format("attachment; filename=%s.%s", tableName , extension);
         }
         return null;
     }
@@ -228,7 +296,9 @@ public class DefaultTableService implements TableService {
      *                       all sortFields are considered asc. If specified, the number of elements must be equal to sortFields.
      * @return a list of hibernate order objects
      */
-    private List<Order> getOrderings(String tableName, String sortFields, String sortDirections) {
+    private List<Order> getOrderings(String tableName,
+                                     String sortFields,
+                                     String sortDirections) {
         if (sortFields != null) {
             List<String> fieldInfo = new ArrayList<String>();
             fieldInfo.add(sortFields);
@@ -314,36 +384,53 @@ public class DefaultTableService implements TableService {
         }
     }
 
+    public Response getPropertyValuesCSV(String tableName,
+                                         String propertyName,
+                                         String separator) {
+        return getPropertyValues(OutputFormat.CSV, tableName, propertyName, separator);
+    }
 
-    public String getPropertyValues(String tableName,
-                                    String propertyName,
-                                    String output,
-                                    String separator) {
+    public Response getPropertyValuesJSON(String tableName, String propertyName) {
+        return getPropertyValues(OutputFormat.JSON, tableName, propertyName, null);
+    }
+
+    private Response getPropertyValues(OutputFormat format,
+                                       String tableName,
+                                       String propertyName,
+                                       String separator) {
+
         final String schema = FeatureServerConfiguration.getInstance().getDbaseSchema();
         Class<?> entityClass = AutoMapper.getClass(null, schema, tableName);
         if (entityClass == null) {
-            return tableNotExistsMessage(tableName);
+            Response.ResponseBuilder builder = Response.status(Response.Status.NOT_FOUND);
+            builder.entity(tableNotExistsMessage(tableName));
+            return builder.build();
         }
 
-        Class<?> propertyType = null;
+        Class<?> propertyType;
         try {
             propertyType = getPropertyType(entityClass, propertyName);
         } catch (NoSuchFieldException e) {
-            return propertyNotExistsMessage(tableName, propertyName);
+            Response.ResponseBuilder builder= Response.status(Response.Status.NOT_FOUND);
+            builder.entity(propertyNotExistsMessage(tableName, propertyName));
+            return builder.build();
         }
         if (!canDoDistinct(propertyType)) {
-            return propertyDistinctNotSupportedMessage(tableName, propertyName);
+            Response.ResponseBuilder builder= Response.status(Response.Status.PRECONDITION_FAILED);
+            builder.entity(propertyDistinctNotSupportedMessage(tableName, propertyName));
+            return builder.build();
         }
         List<?> values = DbaseFacade.getInstance().getDistinctValues(entityClass, propertyName, propertyType);
-        return toFormat(values, output, tableName, propertyName, separator);
+        Response.ResponseBuilder builder= Response.ok(toFormat(values, format, tableName, propertyName, separator));
+        return builder.build();
 
     }
-        
-    private String toFormat(List<?> values, String outputFormat, String tableName, String propertyName, String separator) {
-        if ("csv".equalsIgnoreCase(outputFormat)) {
-            return toCSVOutput(values, separator);
-        } else {
+
+    private String toFormat(List<?> values, OutputFormat outputFormat, String tableName, String propertyName, String separator) {
+        if (OutputFormat.JSON.equals(outputFormat)) {
             return toJSONOutput(values,tableName, propertyName);
+        } else {
+            return toCSVOutput(values, separator);
         }
     }
 
