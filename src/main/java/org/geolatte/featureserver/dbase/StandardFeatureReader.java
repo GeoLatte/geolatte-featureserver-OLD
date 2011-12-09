@@ -21,7 +21,6 @@
 
 package org.geolatte.featureserver.dbase;
 
-import com.vividsolutions.jts.geom.Envelope;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.geolatte.common.cql.hibernate.CqlHibernate;
@@ -29,6 +28,8 @@ import org.geolatte.common.geo.EnvelopeConverter;
 import org.geolatte.common.geo.TypeConversionException;
 import org.geolatte.common.reflection.EntityClassReader;
 import org.geolatte.common.transformer.TransformerSource;
+import org.geolatte.geom.Envelope;
+import org.geolatte.geom.jts.JTS;
 import org.hibernate.*;
 import org.hibernate.criterion.DetachedCriteria;
 import org.hibernate.criterion.Order;
@@ -167,7 +168,7 @@ public class StandardFeatureReader extends TransformerSource<Object> {
             if (geomName != null) {
                 try {
                     Envelope bbox = new EnvelopeConverter().convert(bboxString);
-                    crit.add(SpatialRestrictions.filter(geomName, bbox, LAMBERT_72));
+                    crit.add(SpatialRestrictions.filter(geomName, JTS.to(bbox), LAMBERT_72));
                 } catch (TypeConversionException e) {
                     // Ignore the bbox
                 }
