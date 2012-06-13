@@ -85,10 +85,17 @@ public class DefaultTableService implements TableService {
                         AutoMapper.getClass(null, FeatureServerConfiguration.getInstance().getDbaseSchema(), table));
                 List<Map<String, String>> properties = new ArrayList<Map<String, String>>();
                 current.put("properties", properties);
-                if (reader.getIdName() != null) {
+                String idName;
+                try {
+                    idName = reader.getIdName();
+                } catch (NullPointerException e) {
+                    LOGGER.warn("Table " + table + " does not have primary key, it is excluded from table list.");
+                    continue;
+                }
+                if (idName != null) {
                     Map<String, String> propertyMap = new HashMap<String, String>();
-                    propertyMap.put("name", reader.getIdName());
-                    propertyMap.put("type", reader.getPropertyType(reader.getIdName()).getSimpleName());
+                    propertyMap.put("name", idName);
+                    propertyMap.put("type", reader.getPropertyType(idName).getSimpleName());
                     properties.add(propertyMap);
                 }
                 if (reader.getGeometryName() != null) {
