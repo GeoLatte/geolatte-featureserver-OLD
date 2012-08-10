@@ -36,7 +36,13 @@
     <context-param>
         <param-name>log4jConfigLocation</param-name>
         <param-value>classpath:log4j.properties</param-value>
-    </context-param>    
+    </context-param>
+
+    <!-- ensures that we can have URL-based content-negotiation -->
+    <context-param>
+        <param-name>resteasy.media.type.mappings</param-name>
+        <param-value>json : application/json, csv : text/csv</param-value>
+    </context-param>
 
 	<listener>
     	<listener-class>org.jboss.resteasy.plugins.server.servlet.ResteasyBootstrap</listener-class>

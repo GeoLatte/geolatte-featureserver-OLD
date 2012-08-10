@@ -24,7 +24,6 @@ package org.geolatte.featureserver.rest;
 import org.jboss.resteasy.annotations.GZIP;
 
 import javax.ws.rs.*;
-import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
 /**
@@ -44,8 +43,8 @@ import javax.ws.rs.core.Response;
 public interface TableService {
 
     public final static String DEFAULT_SEPARATOR = "|";
-    public final static MediaType MEDIA_TYPE_TEXT_CSV_TYPE = new MediaType("text", "csv");
-    public final static String    MEDIA_TYPE_TEXT_CSV      = "text/csv";
+    public final static String MEDIA_TYPE_TEXT_CSV = "text/csv";
+    public final static String MEDIA_TYPE_JSON = "application/json";
 
     /**
      * Gets the names and properties of all tables served in JSON format.
@@ -53,6 +52,7 @@ public interface TableService {
      * @return the names and properties of all tables served.
      */
     @GET
+    @Produces(MEDIA_TYPE_JSON)
     @Path("/tables")
     public String getAllTables();
 
@@ -122,6 +122,7 @@ public interface TableService {
      */
     @GET
     @GZIP
+    @Produces(MEDIA_TYPE_JSON)
     @Path("/tables/{name}")
     public Response getTableJSON(@PathParam("name") String tableName,
                                  @QueryParam("bbox") String bbox,
@@ -163,6 +164,7 @@ public interface TableService {
      * @return the contents of the requested table
      */
     @GET
+    @Produces(MEDIA_TYPE_JSON)
     @Path("/tables/{name}/{property}")
     public Response getPropertyValuesJSON(@PathParam("name") String tableName,
                                           @PathParam("property") String propertyName);
