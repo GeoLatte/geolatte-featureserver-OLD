@@ -25,7 +25,7 @@
     <groupId>org.geolatte</groupId>
     <artifactId>geolatte-featureserver</artifactId>
     <packaging>war</packaging>
-    <version>0.7-SNAPSHOT</version>
+    <version>0.6.1-SNAPSHOT</version>
     <description>
         geolatte-featureserver is designed to serve geometric features through a REST-based API.
     </description>
@@ -136,7 +136,7 @@
         <dependency>
             <groupId>org.geolatte</groupId>
             <artifactId>geolatte-common-hibernate</artifactId>
-            <version>0.5</version>
+            <version>0.6</version>
         </dependency>
         <dependency>
             <groupId>org.hibernate</groupId>

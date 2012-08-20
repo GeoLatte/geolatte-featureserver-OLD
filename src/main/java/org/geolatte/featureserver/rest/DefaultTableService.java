@@ -280,7 +280,7 @@ public class DefaultTableService implements TableService {
         try {
             return jts.transform(outputMap);
         } catch (TransformationException e) {
-            return null;
+            throw new RuntimeException(e);
         }
     }
 
