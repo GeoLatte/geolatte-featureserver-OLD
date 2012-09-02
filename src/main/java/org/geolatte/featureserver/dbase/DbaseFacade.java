@@ -24,6 +24,7 @@ package org.geolatte.featureserver.dbase;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.dom4j.Document;
+import org.geolatte.common.automapper.*;
 import org.geolatte.featureserver.config.FeatureServerConfiguration;
 import org.hibernate.*;
 import org.hibernate.cfg.Configuration;
@@ -31,10 +32,10 @@ import org.hibernate.criterion.Order;
 import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
 import org.hibernatespatial.cfg.HSConfiguration;
-import org.hibernatespatial.pojo.AutoMapper;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 
@@ -53,8 +54,9 @@ public class DbaseFacade {
 
     private static DbaseFacade instance;
     private SessionFactory sessionFactory;
-    private List<String> mappedTables;
-    private static final Logger LOGGER = LogManager.getLogger(DbaseFacade.class);    
+    private List<TableRef> mappedTables;
+    final private DatabaseMapping databaseMapping;
+    private static final Logger LOGGER = LogManager.getLogger(DbaseFacade.class);
 
     /**
      * Private constructor of the database facade. Maps all tables currently present in the database!
@@ -62,8 +64,7 @@ public class DbaseFacade {
      * @throws java.sql.SQLException If retrieval of the database classes, or mapping of the tables was unsuccesfull.
      */
     private DbaseFacade() throws SQLException {
-        if (FeatureServerConfiguration.getInstance() == null || FeatureServerConfiguration.getInstance().isInvalid())
-        {
+        if (FeatureServerConfiguration.getInstance() == null || FeatureServerConfiguration.getInstance().isInvalid()) {
             throw new SQLException("Invalid FeatureServer configuration");
         }
         String connectionString = FeatureServerConfiguration.getInstance().getHibernateProperty("hibernate.connection.url");
@@ -73,25 +74,31 @@ public class DbaseFacade {
         DatabaseMetaData databaseMetaData = dbConnection.getMetaData();
         String schema = FeatureServerConfiguration.getInstance().getDbaseSchema();
         ResultSet resultSet = databaseMetaData.getTables(null, schema, null, new String[]{"TABLE", "VIEW"});
-        ArrayList<String> names = new ArrayList<String>();
+        ArrayList<TableRef> tableRefs = new ArrayList<TableRef>();
         while (resultSet.next()) {
-            names.add(resultSet.getString("TABLE_NAME"));
+            String tableName = resultSet.getString("TABLE_NAME");
+            String tSchem = resultSet.getString("TABLE_SCHEM");
+            String tCat = resultSet.getString("TABLE_CAT");
+            tableRefs.add(TableRef.valueOf(tCat, tSchem, tableName));
         }
         Configuration newConfig = new Configuration();
-        for (String property: FeatureServerConfiguration.getInstance().getHibernateProperties())
-        {
+        for (String property : FeatureServerConfiguration.getInstance().getHibernateProperties()) {
             newConfig.setProperty(property, FeatureServerConfiguration.getInstance().getHibernateProperty(property));
         }
 
-        mappedTables = FeatureServerConfiguration.getInstance().includedTables(names);
+        mappedTables = FeatureServerConfiguration.getInstance().includedTables(tableRefs);
         // We may only invoke this once, since currently the automapper crashes if a table was already mapped in the
         // past. Since this call is present in the private constructor which is only called in the singleton method
         // there is no problem.
-        Document tableMapping = AutoMapper.map(dbConnection, null, schema,mappedTables);
+        AutoMapConfiguration cfg = generateConfiguration(mappedTables);
+        AutoMapper autoMapper = new AutoMapper(cfg, Thread.currentThread().getContextClassLoader());
+        databaseMapping = autoMapper.map(dbConnection);
+        Document tableMapping = databaseMapping.generateHibernateMappingDocument();
+        LOGGER.info("Mapping document is:\n " + tableMapping.asXML());
         resultSet.close();
         dbConnection.close();
         newConfig.addXML(tableMapping.asXML());
-        
+
         HSConfiguration configuration = new HSConfiguration();
         this.sessionFactory = newConfig.buildSessionFactory();
         LOGGER.info("Sessionfactory created: " + sessionFactory);
@@ -102,9 +109,9 @@ public class DbaseFacade {
      * Returns a reader for the given table if that table exists, otherwise returns null.
      *
      * @param tableName the table for which a reader is desired.
-     * @param bbox a boundingbox constraint for the resulting features. This parameter is ignored
-     * if it is invalid, null or if the entities in the given table do not contain a valid
-     * geometry property.
+     * @param bbox      a boundingbox constraint for the resulting features. This parameter is ignored
+     *                  if it is invalid, null or if the entities in the given table do not contain a valid
+     *                  geometry property.
      * @return a reader for the given table, or null if no such table exists
      * @throws DatabaseException If for some reason the reader can not be constructed
      */
@@ -115,37 +122,58 @@ public class DbaseFacade {
     /**
      * @return all tables mapped by this the current featureserver mapping
      */
-    public List<String> getAllMappedTables()
-    {
-        return mappedTables == null ? new ArrayList<String>() : new ArrayList<String>(mappedTables);
+    public List<TableRef> getAllMappedTables() {
+        return mappedTables == null ? new ArrayList<TableRef>() : Collections.unmodifiableList(mappedTables);
+    }
+
+    public Class<?> getMappedClass(TableRef tableRef) {
+        return this.databaseMapping.getGeneratedClass(tableRef);
+    }
+
+    /**
+     * Returns the class mapped to a tableName.
+     *
+     * @param tableName
+     * @return
+     */
+    public Class<?> getMappedClass(String tableName) {
+        if (tableName == null) {
+            throw new IllegalArgumentException("Require non-null argument");
+        }
+        TableRef tableRef = getTableRef(tableName);
+        return databaseMapping.getGeneratedClass(tableRef);
+    }
+
+    private TableRef getTableRef(String tableName) {
+        return TableRef.valueOf(tableName.split("\\."));
     }
 
     /**
      * Returns a reader for the given table if that table eqxists, otherwise returns null.
      *
      * @param tableName the table for which a reader is desired.
-     * @param bbox a boundingbox constraint for the resulting features. This parameter is ignored
-     * if it is invalid, null or if the entities in the given table do not contain a valid
-     * geometry property.
+     * @param bbox      a boundingbox constraint for the resulting features. This parameter is ignored
+     *                  if it is invalid, null or if the entities in the given table do not contain a valid
+     *                  geometry property.
      * @param CQLString A cql expression that should be executed on the featureserver by the reader.
-     * @param start If specified (may be null), this contains the follownumber of the first item to be returned (pagination)
-     * @param limit If specified (may be null), this contains the number of items to return.
+     * @param start     If specified (may be null), this contains the follownumber of the first item to be returned (pagination)
+     * @param limit     If specified (may be null), this contains the number of items to return.
      * @param orderings a list of orderings on which the results will be sorted. If the list is empty or null, the parameter
-     * is ignored.
+     *                  is ignored.
      * @return a reader for the given table, or null if no such table exists
      * @throws DatabaseException If the a reader can not be constructed (eg: invalid cql query)
      */
     public StandardFeatureReader getReader(String tableName, String bbox, String CQLString, Integer start, Integer limit,
                                            List<Order> orderings)
             throws DatabaseException {
-        Class tableClass = AutoMapper.getClass(null, FeatureServerConfiguration.getInstance().getDbaseSchema(), tableName);
+        Class tableClass = databaseMapping.getGeneratedClass(TableRef.valueOf(tableName));
         if (tableClass == null) {
             return null;
         }
         return new StandardFeatureReader(sessionFactory, CQLString, tableClass, bbox, start, limit, orderings);
     }
 
-    public <T> List<T> getDistinctValues(Class<?> entityClass, String property, Class<T> propertyType){
+    public <T> List<T> getDistinctValues(Class<?> entityClass, String property, Class<T> propertyType) {
         Transaction tx = null;
         try {
             Session session = sessionFactory.getCurrentSession();
@@ -156,31 +184,30 @@ public class DbaseFacade {
             List<T> result = (List<T>) criteria.list();
             tx.commit();
             return result;
-        }catch(HibernateException e){
+        } catch (HibernateException e) {
             LOGGER.error(e);
             if (tx != null) {
                 tx.rollback();
             }
             throw new DatabaseException(e);
-        }finally{            
+        } finally {
             sessionFactory.getCurrentSession().close();
         }
     }
-
 
     /**
      * Retrieves an instance of the database, or throws a database exception (unchecked exception), if the
      * databasefacade can not be constructed due to an SQL error. This is typically the case when the settings
      * for the connection are not available from the configuration, if the necessary drivers are not present or if
      * there is a problem with the scheme.
+     *
      * @return An instance of the databasefacade
      * @throws DatabaseException If anything went wrong that made it impossible to retrieve the facade.
      */
-     public static DbaseFacade getInstance()
-             throws DatabaseException
-     {
+    public static DbaseFacade getInstance()
+            throws DatabaseException {
         if (instance == null) {
-            try{
+            try {
                 instance = new DbaseFacade();
             } catch (SQLException e) {
                 LOGGER.error(e);
@@ -189,4 +216,13 @@ public class DbaseFacade {
         }
         return instance;
     }
+
+    private AutoMapConfiguration generateConfiguration(List<TableRef> mappedTables) {
+        AutoMapConfiguration cfg = new AutoMapConfiguration(new TypeMapper("GEOMETRY"));
+        for (TableRef tableRef : mappedTables) {
+            cfg.addTable(tableRef);
+        }
+        return cfg;
+    }
+
 }

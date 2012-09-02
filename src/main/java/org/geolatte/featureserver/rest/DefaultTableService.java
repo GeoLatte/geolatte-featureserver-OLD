@@ -24,6 +24,7 @@ package org.geolatte.featureserver.rest;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.geolatte.common.Feature;
+import org.geolatte.common.automapper.TableRef;
 import org.geolatte.common.dataformats.csv.CsvSerializationTransformation;
 import org.geolatte.common.dataformats.json.jackson.JsonSerializationTransformation;
 import org.geolatte.common.dataformats.json.jackson.SimpleDateFormatSerializer;
@@ -36,7 +37,6 @@ import org.geolatte.featureserver.dbase.DatabaseException;
 import org.geolatte.featureserver.dbase.DbaseFacade;
 import org.geolatte.featureserver.dbase.StandardFeatureReader;
 import org.hibernate.criterion.Order;
-import org.hibernatespatial.pojo.AutoMapper;
 
 import javax.ws.rs.core.Response;
 import java.lang.reflect.Field;
@@ -77,12 +77,12 @@ public class DefaultTableService implements TableService {
     public String getAllTables() {
         try {
             List<Map<String, Object>> tables = new ArrayList<Map<String, Object>>();
-            for (String table : DbaseFacade.getInstance().getAllMappedTables()) {
+            for (TableRef table : DbaseFacade.getInstance().getAllMappedTables()) {
                 Map<String, Object> current = new HashMap<String, Object>();
-                current.put("name", table);
+                current.put("name", table.toString());
                 EntityClassReader reader;
                 reader = EntityClassReader.getClassReaderFor(
-                        AutoMapper.getClass(null, FeatureServerConfiguration.getInstance().getDbaseSchema(), table));
+                        DbaseFacade.getInstance().getMappedClass(table));
                 List<Map<String, String>> properties = new ArrayList<Map<String, String>>();
                 current.put("properties", properties);
                 String idName;
@@ -378,7 +378,7 @@ public class DefaultTableService implements TableService {
                 result.add(new ArrayList<String>());
             }
             EntityClassReader reader = EntityClassReader.getClassReaderFor(
-                    AutoMapper.getClass(null, FeatureServerConfiguration.getInstance().getDbaseSchema(), tableName));
+                    DbaseFacade.getInstance().getMappedClass(tableName));
             for (int i = 0; i < columnNames.length; i++) {
                 if (reader.exists(columnNames[i], true)) {
                     result.get(0).add(columnNames[i]);
@@ -407,7 +407,7 @@ public class DefaultTableService implements TableService {
                                        String separator) {
 
         final String schema = FeatureServerConfiguration.getInstance().getDbaseSchema();
-        Class<?> entityClass = AutoMapper.getClass(null, schema, tableName);
+        Class<?> entityClass = DbaseFacade.getInstance().getMappedClass(tableName);
         if (entityClass == null) {
             Response.ResponseBuilder builder = Response.status(Response.Status.NOT_FOUND);
             builder.entity(tableNotExistsMessage(tableName));

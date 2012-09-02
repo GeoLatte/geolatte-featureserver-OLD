@@ -28,14 +28,10 @@ import org.dom4j.DocumentException;
 import org.dom4j.Element;
 import org.dom4j.Node;
 import org.dom4j.io.SAXReader;
+import org.geolatte.common.automapper.TableRef;
 import org.geolatte.common.expressions.Expression;
 import org.geolatte.common.expressions.Expressions;
 import org.geolatte.common.expressions.Filter;
-import org.geolatte.common.expressions.FilterTransformation;
-import org.geolatte.common.transformer.ClosedTransformerChain;
-import org.geolatte.common.transformer.SimpleTransformerSink;
-import org.geolatte.common.transformer.SimpleTransformerSource;
-import org.geolatte.common.transformer.TransformerChainFactory;
 
 import java.util.*;
 
@@ -192,7 +188,7 @@ public class FeatureServerConfiguration {
      * @return the names of the tables that pass the include/excludes
      * @throws ConfigurationException (unchecked) if the configuration is invalid.
      */
-    public List<String> includedTables(List<String> allTables)
+    public List<TableRef> includedTables(List<TableRef> allTables)
             throws ConfigurationException {
         if (isInvalid()) {
             throw new ConfigurationException("Configuration invalid: " +  getErrorMessage());
@@ -206,11 +202,13 @@ public class FeatureServerConfiguration {
             excludeExpression = Expressions.and(excludeExpression, Expressions.notLike(Expressions.stringProperty(null), Expressions.constant(excludeRule), '*'));
         }
         Filter ourFilter = new Filter(Expressions.and(includeExpression, excludeExpression));
-        SimpleTransformerSink<String> mySink = new SimpleTransformerSink<String>();
-        ClosedTransformerChain myChain = TransformerChainFactory.<String, String>newChain().add(new SimpleTransformerSource<String>(allTables))
-                .addFilter(new FilterTransformation<String>(ourFilter)).last(mySink);
-        myChain.run();
-        return mySink.getCollectedOutput();
+        List<TableRef> filteredList = new ArrayList<TableRef>();
+        for (TableRef candidate : allTables){
+            if(ourFilter.evaluate(candidate.getTableName())) {
+                filteredList.add(candidate);
+            }
+        }
+        return filteredList;
     }
 
 
