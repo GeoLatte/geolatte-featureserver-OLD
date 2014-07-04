@@ -49,7 +49,7 @@
     </HibernateConfiguration>
     
     <Mapping>
-        <Tables>
+        <Tables crs="4327">
             <Schema>adhoc</Schema>
             <!-- A table is included if a rule is present for its inclusion and no rule is present for its exclusion
                  Both the Include and the Exclude set are processes in order, and as soon as rule is hit, the rest of the

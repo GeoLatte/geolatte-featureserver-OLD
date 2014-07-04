@@ -21,25 +21,29 @@
 
 package org.geolatte.featureserver.dbase;
 
-import org.apache.log4j.LogManager;
-import org.apache.log4j.Logger;
-import org.geolatte.common.cql.hibernate.CqlHibernate;
-import org.geolatte.common.geo.EnvelopeConverter;
-import org.geolatte.common.geo.TypeConversionException;
-import org.geolatte.common.reflection.EntityClassReader;
-import org.geolatte.common.transformer.TransformerSource;
-import org.geolatte.geom.Envelope;
-import org.geolatte.geom.jts.JTS;
-import org.hibernate.*;
-import org.hibernate.criterion.DetachedCriteria;
-import org.hibernate.criterion.Order;
-import org.hibernate.criterion.Projections;
-import org.hibernatespatial.criterion.SpatialRestrictions;
-
 import java.text.ParseException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
+
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.geolatte.common.cql.hibernate.CqlHibernate;
+import org.geolatte.common.reflection.EntityClassReader;
+import org.geolatte.common.transformer.TransformerSource;
+import org.geolatte.geom.Envelope;
+import org.geolatte.geom.jts.JTS;
+import org.hibernatespatial.criterion.SpatialRestrictions;
+
+import org.hibernate.Criteria;
+import org.hibernate.HibernateException;
+import org.hibernate.ScrollMode;
+import org.hibernate.ScrollableResults;
+import org.hibernate.SessionFactory;
+import org.hibernate.Transaction;
+import org.hibernate.criterion.DetachedCriteria;
+import org.hibernate.criterion.Order;
+import org.hibernate.criterion.Projections;
 
 /**
  * This class is responsible for the actual retrieval of all objects
@@ -57,7 +61,6 @@ import java.util.NoSuchElementException;
  */
 public class StandardFeatureReader extends TransformerSource<Object> {
 
-    public static int LAMBERT_72 = 31370;
     private SessionFactory sessionFactory;
     private ScrollableResults results = null;
     private Class entityClass = null;
@@ -78,7 +81,7 @@ public class StandardFeatureReader extends TransformerSource<Object> {
      * @param factory     The sessionfactory to use.
      * @param cqlString   The detached criterium to apply to the query. Can be null.
      * @param entityClass The entityclass of the objects to retrieve. Required.
-     * @param bboxString  A boundingbox filter. Used on the geometry-property of the given entity. The geometry
+     * @param bbox  	  A boundingbox filter. Used on the geometry-property of the given entity. The geometry
      *                    field is determined by considering the entityClass as a feature (@see org.geolatte.core.reflection.EntityClassReader).
      *                    The bbox filter is ignored if it is invalid, null or if the entityClass does not contain
      *                    a geometryfield
@@ -89,7 +92,7 @@ public class StandardFeatureReader extends TransformerSource<Object> {
      *                    on the query result in the order of the list (so the results are sorted first according to the first order and so on).
      * @throws DatabaseException if a problem occurs that would prevent retrieval of items (eg: if the cql string is invalid)
      */
-    public StandardFeatureReader(SessionFactory factory, String cqlString, Class entityClass, String bboxString,
+    public StandardFeatureReader(SessionFactory factory, String cqlString, Class entityClass, Envelope bbox,
                                  Integer start, Integer limit, List<Order> orderings)
             throws DatabaseException {
         this.sessionFactory = factory;
@@ -98,7 +101,7 @@ public class StandardFeatureReader extends TransformerSource<Object> {
         try {
             beginTransaction(factory);
             Criteria criteria = toExecutableCriteria(factory, entityClass, detCrit);
-            addBBoxConstraint(entityClass, bboxString, criteria);
+            addBBoxConstraint(entityClass, bbox, criteria);
             getResultCount(criteria);
             resetToScroll(criteria);
             setStart(start, criteria);
@@ -118,14 +121,14 @@ public class StandardFeatureReader extends TransformerSource<Object> {
      *
      * @param factory     The sessionfactory to use.
      * @param entityClass The entityclass of the objects to retrieve
-     * @param bboxString  A boundingbox filter. Used on the geometry-property of the given entity. The geometry
+     * @param bbox  A boundingbox filter. Used on the geometry-property of the given entity. The geometry
      *                    field is determined by considering the entityClass as a feature (@see org.geolatte.core.reflection.EntityClassReader).
      *                    The bbox filter is ignored if it is invalid, null or if the entityClass does not contain
      *                    a geometryfield
      * @throws DatabaseException If an error would occur that would prevent retrieval of items from the database
      */
-    public StandardFeatureReader(SessionFactory factory, Class entityClass, String bboxString) throws DatabaseException {
-        this(factory, null, entityClass, bboxString, null, null, null);
+    public StandardFeatureReader(SessionFactory factory, Class entityClass, Envelope bbox) throws DatabaseException {
+        this(factory, null, entityClass, bbox, null, null, null);
     }
 
     private void setOrderings(List<Order> orderings, Criteria criteria) {
@@ -162,16 +165,11 @@ public class StandardFeatureReader extends TransformerSource<Object> {
         crit.setResultTransformer(Criteria.ROOT_ENTITY);
     }
 
-    private void addBBoxConstraint(Class entityClass, String bboxString, Criteria crit) {
-        if (bboxString != null) {
+    private void addBBoxConstraint(Class entityClass, Envelope bbox, Criteria crit) {
+        if (bbox != null) {
             String geomName = EntityClassReader.getClassReaderFor(entityClass).getGeometryName();
             if (geomName != null) {
-                try {
-                    Envelope bbox = new EnvelopeConverter().convert(bboxString);
-                    crit.add(SpatialRestrictions.filter(geomName, JTS.to(bbox), LAMBERT_72));
-                } catch (TypeConversionException e) {
-                    // Ignore the bbox
-                }
+                crit.add(SpatialRestrictions.filter(geomName, JTS.to(bbox), bbox.getCrsId().getCode()));
             }
         }
     }

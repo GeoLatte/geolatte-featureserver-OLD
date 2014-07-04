@@ -21,22 +21,39 @@
 
 package org.geolatte.featureserver.dbase;
 
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.dom4j.Document;
-import org.geolatte.common.automapper.*;
+import org.geolatte.common.automapper.AutoMapConfiguration;
+import org.geolatte.common.automapper.AutoMapper;
+import org.geolatte.common.automapper.DatabaseMapping;
+import org.geolatte.common.automapper.TableRef;
+import org.geolatte.common.automapper.TypeMapper;
+import org.geolatte.common.geo.EnvelopeConverter;
+import org.geolatte.common.geo.TypeConversionException;
 import org.geolatte.featureserver.config.FeatureServerConfiguration;
-import org.hibernate.*;
+import org.geolatte.geom.Envelope;
+import org.geolatte.geom.crs.CrsId;
+import org.hibernatespatial.cfg.HSConfiguration;
+
+import org.hibernate.Criteria;
+import org.hibernate.HibernateException;
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
+import org.hibernate.Transaction;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.criterion.Order;
 import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
-import org.hibernatespatial.cfg.HSConfiguration;
-
-import java.sql.*;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 
 /**
@@ -56,6 +73,7 @@ public class DbaseFacade {
     private SessionFactory sessionFactory;
     private List<TableRef> mappedTables;
     final private DatabaseMapping databaseMapping;
+	final private CrsId defaultCrsId;
     private static final Logger LOGGER = LogManager.getLogger(DbaseFacade.class);
 
     /**
@@ -73,6 +91,7 @@ public class DbaseFacade {
         Connection dbConnection = DriverManager.getConnection(connectionString, user, password);
         DatabaseMetaData databaseMetaData = dbConnection.getMetaData();
         String schema = FeatureServerConfiguration.getInstance().getDbaseSchema();
+		defaultCrsId = CrsId.parse( FeatureServerConfiguration.getInstance().getDefaultCRS() );
         ResultSet resultSet = databaseMetaData.getTables(null, schema, null, new String[]{"TABLE", "VIEW"});
         ArrayList<TableRef> tableRefs = new ArrayList<TableRef>();
         while (resultSet.next()) {
@@ -152,7 +171,7 @@ public class DbaseFacade {
      * Returns a reader for the given table if that table eqxists, otherwise returns null.
      *
      * @param tableName the table for which a reader is desired.
-     * @param bbox      a boundingbox constraint for the resulting features. This parameter is ignored
+     * @param bboxStr      a boundingbox constraint for the resulting features. This parameter is ignored
      *                  if it is invalid, null or if the entities in the given table do not contain a valid
      *                  geometry property.
      * @param CQLString A cql expression that should be executed on the featureserver by the reader.
@@ -163,17 +182,34 @@ public class DbaseFacade {
      * @return a reader for the given table, or null if no such table exists
      * @throws DatabaseException If the a reader can not be constructed (eg: invalid cql query)
      */
-    public StandardFeatureReader getReader(String tableName, String bbox, String CQLString, Integer start, Integer limit,
+    public StandardFeatureReader getReader(String tableName, String bboxStr, String CQLString, Integer start, Integer limit,
                                            List<Order> orderings)
             throws DatabaseException {
         Class tableClass = databaseMapping.getGeneratedClass(TableRef.valueOf(tableName));
         if (tableClass == null) {
             return null;
         }
-        return new StandardFeatureReader(sessionFactory, CQLString, tableClass, bbox, start, limit, orderings);
+		Envelope bbox = extractBoundingBox( bboxStr );
+		return new StandardFeatureReader(sessionFactory, CQLString, tableClass, bbox, start, limit, orderings);
     }
 
-    public <T> List<T> getDistinctValues(Class<?> entityClass, String property, Class<T> propertyType) {
+	private Envelope extractBoundingBox(String bboxStr) {
+		if (bboxStr == null || bboxStr.isEmpty()) return null;
+		Envelope bbox = null;
+		try {
+			double[] co = new EnvelopeConverter().getCoordinates(bboxStr);
+			if (co.length < 4) {
+				throw new TypeConversionException();
+			}
+			bbox = new Envelope( co[0], co[1], co[2], co[3], defaultCrsId );
+		}
+		catch (TypeConversionException e ) {
+			LOGGER.warn( "BBOX Conversion error: can't convert " + bboxStr + " into an envelope." );
+		}
+		return bbox;
+	}
+
+	public <T> List<T> getDistinctValues(Class<?> entityClass, String property, Class<T> propertyType) {
         Transaction tx = null;
         try {
             Session session = sessionFactory.getCurrentSession();

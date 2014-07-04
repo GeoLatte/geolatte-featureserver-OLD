@@ -23,9 +23,9 @@
     <HibernateConfiguration>
         <!-- Any hibernate property can be placed here -->
         <property name="connection.driver_class">org.postgresql.Driver</property>
-        <property name="connection.url">jdbc:postgresql://localhost:5432/dwh</property>
-        <property name="connection.username">postgres</property>
-        <property name="connection.password">postgres</property>
+        <property name="connection.url">jdbc:postgresql://localhost/dwh</property>
+        <property name="connection.username">dwh</property>
+        <property name="connection.password">dwh</property>
         <property name="dialect">org.hibernatespatial.postgis.PostgisDialect</property>
         <property name="show_sql">false</property>
         <property name="current_session_context_class">thread</property>
@@ -49,8 +49,8 @@
     </HibernateConfiguration>
     
     <Mapping>
-        <Tables>
-            <Schema>adhoc</Schema>
+        <Tables crs="4326">
+            <Schema>public</Schema>
             <!-- A table is included if a rule is present for its inclusion and no rule is present for its exclusion
                  Both the Include and the Exclude set are processes in order, and as soon as rule is hit, the rest of the
                  rules are skipped. If an item matches both an includes and an excludes set, it is therefore NOT included.
@@ -60,7 +60,7 @@
                  Note that only '*' is accepted as a wildcardcharacter.
                  -->
             <Include>
-                <Item>t_*</Item>
+                <Item>*</Item>
             </Include>
             <Exclude>
             </Exclude>

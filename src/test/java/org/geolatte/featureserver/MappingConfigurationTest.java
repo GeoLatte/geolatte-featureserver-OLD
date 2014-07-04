@@ -24,6 +24,8 @@ package org.geolatte.featureserver;
 import org.geolatte.featureserver.config.FeatureServerConfiguration;
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
+
 /**
  * No comment provided yet for this class.
  * <p/>
@@ -58,6 +60,8 @@ public class MappingConfigurationTest {
     public void testReadConfigFileFromSysProperty() {
         System.setProperty("geolatte.fs.config", "src/test/resources/test-config.xml");
         FeatureServerConfiguration cfg = FeatureServerConfiguration.getInstance();
+		assertEquals( "4327", cfg.getDefaultCRS() );
+
 
 
     }

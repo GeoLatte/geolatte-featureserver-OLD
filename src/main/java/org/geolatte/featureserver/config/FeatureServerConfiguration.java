@@ -21,6 +21,12 @@
 
 package org.geolatte.featureserver.config;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.dom4j.Document;
@@ -32,8 +38,6 @@ import org.geolatte.common.automapper.TableRef;
 import org.geolatte.common.expressions.Expression;
 import org.geolatte.common.expressions.Expressions;
 import org.geolatte.common.expressions.Filter;
-
-import java.util.*;
 
 /**
  * This class (re)reads the mapping-configuration for the featureserver and offers it in a convenient format for
@@ -49,6 +53,7 @@ import java.util.*;
  */
 public class FeatureServerConfiguration {
 
+	private static final String WGS_84 = "4326";
     private static final Logger LOGGER = LogManager.getLogger(FeatureServerConfiguration.class);
     private static String STD_CONFIG_FILE_NAME = "FeatureServerConfiguration.xml";
 
@@ -61,9 +66,10 @@ public class FeatureServerConfiguration {
     private Map<String, String> hibernateProperties = new HashMap<String, String>();
 
     private String dbaseSchema = null;
+	private String defaultCRS = WGS_84;
     private String propertyFileName;
 
-    /**
+	/**
      * Returns the instance of the featureserver configuration. This method will return a configurationobject, even if
      * the parsing of the underlying xml file failed. To ensure that there are no errors, the caller can call the isInvalid
      * method on the resulting object. If it returns true, all methods called on the object will result in a ConfgurationException.
@@ -75,7 +81,16 @@ public class FeatureServerConfiguration {
         return SingletonHolder.INSTANCE;
     }
 
-    /**
+	/**
+	 * Returns the default EPSG Coordinate Reference System for the database.
+	 *
+	 * @return the default EPSG Coordinate Reference System for the database
+	 */
+	public String getDefaultCRS() {
+		return defaultCRS;
+	}
+
+	/**
      * Lazy and threadsafe implementation of singleton. Solution of Bill Pugh.
      */
     private static class SingletonHolder {
@@ -171,7 +186,13 @@ public class FeatureServerConfiguration {
                 dbaseSchema = null;
                 LOGGER.info(String.format("No schema specified."));
             }
-            errorMessage = null;
+			Node defaultCRSAttr = document.selectSingleNode( "//FeatureServerConfig/Mapping/Tables/@crs" );
+			if ( defaultCRSAttr != null ) {
+				defaultCRS = defaultCRSAttr.getText();
+				LOGGER.info( String.format( "default CRS for schema is: %s", defaultCRS ) );
+			}
+
+			errorMessage = null;
             error = false;
         } catch (DocumentException e) {
             LOGGER.error("Error reading configuration file: ", e);
@@ -193,6 +214,7 @@ public class FeatureServerConfiguration {
         if (isInvalid()) {
             throw new ConfigurationException("Configuration invalid: " +  getErrorMessage());
         }
+		//TODO -- replace this by full regex -- better for assumptions
         Expression<Boolean> includeExpression = Expressions.constant(false);
         for (String includeRule : includeRules) {
             includeExpression = Expressions.or(includeExpression, Expressions.like(Expressions.stringProperty(null), Expressions.constant(includeRule), '*'));
